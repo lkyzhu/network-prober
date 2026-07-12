@@ -1,0 +1,4 @@
+探测地址,协议,探测类型,根证书
+8.8.8.8:53,tcp,regular,
+example.com:443,http,full,
+1.1.1.1:53,udp,regular,

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>网络探测工具</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="header">
+    <div class="header-left">
+      <h1>网络探测工具</h1>
+    </div>
+    <div class="header-right">
+      <span class="status-indicator" id="statusIndicator"></span>
+      <span id="statusText">就绪</span>
+    </div>
+  </header>
+
+  <div id="content">
+    <aside id="sidebar">
+      <div class="sidebar-header" oncontextmenu="showTreeContextMenu(event)">
+        <h3>模块列表</h3>
+      </div>
+      <div id="moduleTree" class="tree-view"></div>
+    </aside>
+
+    <main id="main">
+      <div class="toolbar">
+        <button class="btn btn-primary" onclick="showAddModuleModal()">+ 添加模块</button>
+        <button class="btn btn-success" onclick="showAddItemModal()">+ 添加检测项</button>
+        <button class="btn btn-info" onclick="showImportModal()">导入检测项</button>
+        <button class="btn btn-danger" onclick="startDetection()">开始探测</button>
+        <button class="btn btn-warning" onclick="deleteSelected()">删除选中</button>
+      </div>
+
+      <div id="itemListContainer">
+        <div class="item-list-header">
+          <label class="checkbox-all">
+            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+            <span>全选</span>
+          </label>
+          <span class="header-address">探测地址</span>
+          <span class="header-protocol">协议</span>
+          <span class="header-type">探测类型</span>
+          <span class="header-cert">证书</span>
+          <span class="header-actions">操作</span>
+          <span class="header-result" style="text-align:center;">探测结果</span>
+        </div>
+        <div id="itemList" class="item-list"></div>
+      </div>
+    </main>
+  </div>
+
+  <footer id="tail">
+    <span id="tailText">就绪 - 选择模块或检测项后开始探测</span>
+  </footer>
+</div>
+
+<div id="contextMenu" class="context-menu hidden"></div>
+
+<div id="modalOverlay" class="modal-overlay hidden" onclick="closeModal(event)">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
