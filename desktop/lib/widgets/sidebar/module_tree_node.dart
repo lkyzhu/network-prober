@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../providers/app_state_provider.dart';
 import '../../models/module.dart';
 import '../../models/probe_item.dart';
@@ -275,6 +278,15 @@ class _ModuleTreeNodeState extends ConsumerState<ModuleTreeNode>
         ),
         const PopupMenuDivider(),
         PopupMenuItem<void>(
+          child: const Text('导出'),
+          onTap: () => _exportModule(context),
+        ),
+        PopupMenuItem<void>(
+          child: const Text('导入'),
+          onTap: () => _importModule(context),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem<void>(
           child: const Text('删除模块', style: TextStyle(color: Colors.red)),
           onTap: () => _showDeleteConfirmDialog(context),
         ),
@@ -296,11 +308,11 @@ class _ModuleTreeNodeState extends ConsumerState<ModuleTreeNode>
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
-                ref.read(appStateProvider.notifier).addModule(controller.text.trim(), parentId: widget.module.id);
+                await ref.read(appStateProvider.notifier).addModule(controller.text.trim(), parentId: widget.module.id);
                 setState(() => _expanded = true);
-                Navigator.pop(ctx);
+                if (ctx.mounted) Navigator.pop(ctx);
               }
             },
             child: const Text('确认'),
@@ -324,10 +336,10 @@ class _ModuleTreeNodeState extends ConsumerState<ModuleTreeNode>
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (controller.text.trim().isNotEmpty) {
-                ref.read(appStateProvider.notifier).renameModule(widget.module.id, controller.text.trim());
-                Navigator.pop(ctx);
+                await ref.read(appStateProvider.notifier).renameModule(widget.module.id, controller.text.trim());
+                if (ctx.mounted) Navigator.pop(ctx);
               }
             },
             child: const Text('确认'),
@@ -335,6 +347,70 @@ class _ModuleTreeNodeState extends ConsumerState<ModuleTreeNode>
         ],
       ),
     );
+  }
+
+  Future<void> _exportModule(BuildContext context) async {
+    try {
+      final data = await ref.read(appStateProvider.notifier).exportModule(widget.module.id);
+      final jsonStr = const JsonEncoder.withIndent('  ').convert(data);
+      final result = await FilePicker.platform.saveFile(
+        dialogTitle: '导出模块',
+        fileName: '${widget.module.name}.json',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (result != null) {
+        File(result).writeAsStringSync(jsonStr);
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('已导出到 $result'), duration: const Duration(seconds: 2)),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导出失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _importModule(BuildContext context) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: '导入模块',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = File(result.files.single.path!);
+      final jsonStr = file.readAsStringSync();
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+
+      // Determine parent: if imported root name matches this module's name -> merge at same level
+      // otherwise -> import as child of this module
+      final parentId = data['name'] == widget.module.name
+          ? widget.module.parentId
+          : widget.module.id;
+
+      await ref.read(appStateProvider.notifier).importModule({
+        'parent_id': parentId,
+        'modules': [data],
+      });
+      if (context.mounted) {
+        setState(() => _expanded = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('导入成功'), duration: Duration(seconds: 2)),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导入失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   void _showDeleteConfirmDialog(BuildContext context) {

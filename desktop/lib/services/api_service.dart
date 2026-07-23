@@ -157,6 +157,25 @@ class ApiService {
     return data.map((e) => ProbeResult.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  Future<Map<String, dynamic>> exportModule(int moduleId) async {
+    final response = await _client.get(
+      Uri.parse('$baseUrl/api/modules/export?module_id=$moduleId'),
+      headers: _headers,
+    );
+    final data = await _handleResponse(response) as Map<String, dynamic>;
+    return data;
+  }
+
+  Future<Map<String, dynamic>> importModule(Map<String, dynamic> body) async {
+    final response = await _client.post(
+      Uri.parse('$baseUrl/api/modules/import'),
+      headers: _headers,
+      body: jsonEncode(body),
+    );
+    final data = await _handleResponse(response) as Map<String, dynamic>;
+    return data;
+  }
+
   Future<ProbeItem> getItem(int id) async {
     final response = await _client.get(
       Uri.parse('$baseUrl/api/items/$id'),

@@ -271,6 +271,120 @@ func (s *Store) ImportItems(req ImportRequest) ([]ProbeItem, error) {
 	return items, s.save()
 }
 
+func (s *Store) ExportModule(id int) *ExportModuleData {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var mod *Module
+	for i := range s.data.Modules {
+		if s.data.Modules[i].ID == id {
+			mod = &s.data.Modules[i]
+			break
+		}
+	}
+	if mod == nil {
+		return nil
+	}
+
+	result := &ExportModuleData{
+		ID:          mod.ID,
+		Name:        mod.Name,
+		Description: mod.Description,
+	}
+
+	for _, it := range s.data.ProbeItems {
+		if it.ModuleID == id {
+			result.Items = append(result.Items, ExportItemData{
+				Address:   it.Address,
+				Protocol:  it.Protocol,
+				ProbeType: it.ProbeType,
+				CertName:  it.CertName,
+				CertData:  it.CertData,
+			})
+		}
+	}
+
+	for _, m := range s.data.Modules {
+		if m.ParentID == id {
+			child := s.ExportModule(m.ID)
+			if child != nil {
+				result.Children = append(result.Children, *child)
+			}
+		}
+	}
+
+	return result
+}
+
+func (s *Store) ImportModuleTree(data ExportModuleData, parentID int) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.importModuleTreeLocked(data, parentID)
+}
+
+func (s *Store) importModuleTreeLocked(data ExportModuleData, parentID int) (int, error) {
+	// Merge: if a child at the same level has the same name, recurse into it
+	existingID := 0
+	for _, m := range s.data.Modules {
+		if m.ParentID == parentID && m.Name == data.Name {
+			existingID = m.ID
+			break
+		}
+	}
+
+	var modID int
+	if existingID != 0 {
+		modID = existingID
+	} else {
+		m := Module{
+			ID:          s.data.NextModuleID,
+			ParentID:    parentID,
+			Name:        data.Name,
+			Description: data.Description,
+			Order:       len(s.data.Modules),
+			CreatedAt:   time.Now(),
+		}
+		s.data.NextModuleID++
+		s.data.Modules = append(s.data.Modules, m)
+		modID = m.ID
+	}
+
+	// Import items, skip (address+protocol) duplicates
+	existingAddrs := make(map[string]bool)
+	for _, it := range s.data.ProbeItems {
+		if it.ModuleID == modID {
+			key := it.Address + "|" + it.Protocol
+			existingAddrs[key] = true
+		}
+	}
+	for _, item := range data.Items {
+		key := item.Address + "|" + item.Protocol
+		if existingAddrs[key] {
+			continue
+		}
+		pi := ProbeItem{
+			ID:        s.data.NextItemID,
+			ModuleID:  modID,
+			Address:   item.Address,
+			Protocol:  item.Protocol,
+			ProbeType: item.ProbeType,
+			CertName:  item.CertName,
+			CertData:  item.CertData,
+			CreatedAt: time.Now(),
+		}
+		s.data.NextItemID++
+		s.data.ProbeItems = append(s.data.ProbeItems, pi)
+	}
+
+	for _, child := range data.Children {
+		if _, err := s.importModuleTreeLocked(child, modID); err != nil {
+			return modID, err
+		}
+	}
+
+	return modID, s.save()
+}
+
 func (s *Store) SaveResult(r ProbeResult) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

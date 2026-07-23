@@ -1,5 +1,0 @@
-探测地址,协议,探测类型,根证书
-https://www.example.com,http,full,
-https://api.example.com:443,http,regular,
-tcp://db.example.com:3306,tcp,full,
-udp://dns.example.com:53,udp,regular,

@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "NetworkTools" "\0"
+            VALUE "CompanyName", "Network Prober" "\0"
+            VALUE "FileDescription", "Prober UI" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "NetworkTools" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 NetworkTools. All rights reserved." "\0"
-            VALUE "OriginalFilename", "NetworkTools.exe" "\0"
-            VALUE "ProductName", "NetworkTools" "\0"
+            VALUE "InternalName", "Prober UI" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Network Prober. All rights reserved." "\0"
+            VALUE "OriginalFilename", "prober-ui.exe" "\0"
+            VALUE "ProductName", "Network Prober" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

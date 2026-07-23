@@ -249,16 +249,16 @@ class ItemListWidget extends ConsumerWidget {
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (addressCtl.text.trim().isEmpty) return;
-                ref.read(appStateProvider.notifier).addItem(
+                await ref.read(appStateProvider.notifier).addItem(
                   addressCtl.text.trim(),
                   protocol,
                   probeType,
                   moduleId,
                   certData: certCtl.text.trim().isEmpty ? null : certCtl.text.trim(),
                 );
-                Navigator.pop(ctx);
+                if (ctx.mounted) Navigator.pop(ctx);
               },
               child: const Text('确认'),
             ),

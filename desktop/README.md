@@ -1,4 +1,4 @@
-# flutter_client
+# prober_ui
 
 A new Flutter project.
 

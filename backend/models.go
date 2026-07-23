@@ -119,3 +119,25 @@ type UpdateItemReq struct {
 	CertData   string `json:"cert_data,omitempty"`
 	ClearCert  bool   `json:"clear_cert"`
 }
+
+// Export/Import module tree
+type ExportModuleData struct {
+	ID          int                `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Items       []ExportItemData   `json:"items"`
+	Children    []ExportModuleData `json:"children"`
+}
+
+type ExportItemData struct {
+	Address   string `json:"address"`
+	Protocol  string `json:"protocol"`
+	ProbeType string `json:"probe_type"`
+	CertName  string `json:"cert_name,omitempty"`
+	CertData  string `json:"cert_data,omitempty"`
+}
+
+type ImportModuleRequest struct {
+	ParentID int                `json:"parent_id"`
+	Modules  []ExportModuleData `json:"modules"`
+}

@@ -21,6 +21,7 @@ class SingleProbeResult {
   final bool success;
   final int? statusCode;
   final int? rttMs;
+  final int? totalMs;
   final int? dnsLookupMs;
   final int? connectMs;
   final String? error;
@@ -33,6 +34,7 @@ class SingleProbeResult {
     required this.success,
     this.statusCode,
     this.rttMs,
+    this.totalMs,
     this.dnsLookupMs,
     this.connectMs,
     this.error,
@@ -56,6 +58,7 @@ class SingleProbeResult {
       success: status == 0,
       statusCode: json['status_code'] as int?,
       rttMs: _toIntMs(json['first_packet_cost_ms']),
+      totalMs: _toIntMs(json['total_cost_ms']),
       dnsLookupMs: _toIntMs(json['dns_cost_ms']),
       connectMs: _toIntMs(json['connect_cost_ms']),
       error: json['error_message'] as String? ?? json['details'] as String?,

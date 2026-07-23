@@ -1,13 +1,11 @@
 #!/bin/bash
 set -e
 
-# 版本号 (优先从 git tag 获取，否则使用默认)
 VERSION=${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || echo "1.0.0")}
 BUILD_DIR="build"
 BINARY_NAME="network-prober"
 STATIC_FILES="web/static/index.html web/static/style.css web/static/app.js web/static/import_template.csv"
 
-# 支持的平台列表
 PLATFORMS=(
     "linux/amd64"
     "linux/arm64"
@@ -16,13 +14,7 @@ PLATFORMS=(
     "darwin/arm64"
 )
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# 打印彩色信息
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
 info() { echo -e "${GREEN}[INFO]${NC} $1"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 error() { echo -e "${RED}[ERROR]${NC} $1"; }
@@ -81,12 +73,13 @@ build_platform() {
         -o "$output_dir/$binary_name" ./backend
     
     # 复制安装脚本
+    local script_dir="$(cd "$(dirname "$0")" && pwd)"
     if [ "$os" = "windows" ]; then
-        cp install.bat "$output_dir/" 2>/dev/null || warn "install.bat 不存在，跳过"
-        cp uninstall.bat "$output_dir/" 2>/dev/null || warn "uninstall.bat 不存在，跳过"
+        cp "$script_dir/../build/windows-amd64/install.bat" "$output_dir/" 2>/dev/null || warn "install.bat 不存在，跳过"
+        cp "$script_dir/../build/windows-amd64/uninstall.bat" "$output_dir/" 2>/dev/null || warn "uninstall.bat 不存在，跳过"
     else
-        cp install.sh "$output_dir/"
-        cp uninstall.sh "$output_dir/"
+        cp "$script_dir/install.sh" "$output_dir/"
+        cp "$script_dir/uninstall.sh" "$output_dir/"
         chmod +x "$output_dir/install.sh" "$output_dir/uninstall.sh"
     fi
     
@@ -131,74 +124,120 @@ build_all() {
     info "全部平台编译完成"
 }
 
-# 创建发布包
 create_release() {
-    info "创建发布包..."
+    info "Creating release archives..."
     local dist_dir="dist"
     mkdir -p "$dist_dir"
-    
+
     for platform in "${PLATFORMS[@]}"; do
         local os="${platform%%/*}"
         local arch="${platform##*/}"
         local src_dir="$BUILD_DIR/${os}-${arch}"
         local archive_name="network-prober-$VERSION-${os}-${arch}"
-        
+
         if [ -d "$src_dir" ]; then
-            info "打包: $archive_name"
+            info "Packaging: $archive_name"
             if [ "$os" = "windows" ]; then
                 (cd "$BUILD_DIR" && zip -r "../$dist_dir/$archive_name.zip" "${os}-${arch}/")
             else
                 (cd "$BUILD_DIR" && tar -czf "../$dist_dir/$archive_name.tar.gz" "${os}-${arch}/")
             fi
         else
-            warn "目录不存在: $src_dir，跳过打包"
+            warn "Directory not found: $src_dir, skipping"
         fi
     done
-    
-    # 创建 SHA256 校验文件
-    info "生成 SHA256 校验文件..."
+
+    info "Generating SHA256 checksums..."
     (cd "$dist_dir" && sha256sum * > "sha256sums.txt")
-    
-    info "发布包已创建到: $dist_dir"
+
+    info "Release packages created in: $dist_dir"
+}
+
+# Package: build backend + desktop + platform installer
+package_current() {
+    local os=$(go env GOOS)
+    local arch=${1:-amd64}
+    local platform=""
+    case "$os" in
+        linux)  platform="linux" ;;
+        darwin) platform="macos" ;;
+        windows) platform="windows" ;;
+    esac
+    info "Packaging for $platform/$arch..."
+    local script_dir="$(cd "$(dirname "$0")" && pwd)"
+    "$script_dir/build-desktop.sh" "package-${platform}" --arch "$arch"
+}
+
+package_all() {
+    local arch=${1:-amd64}
+    info "Packaging for all platforms ($arch)..."
+    local script_dir="$(cd "$(dirname "$0")" && pwd)"
+    VERSION=$VERSION "$script_dir/build-desktop.sh" package-all --arch "$arch"
 }
 
 # 显示帮助信息
 show_help() {
     cat << EOF
-网络探测工具 - 构建脚本
+Network Prober - Build Script
 
-用法: $0 [命令]
+Usage: $0 [command] [--arch <arch>]
 
-命令:
-  all          编译所有支持的平台
-  clean        清理构建目录
-  release      编译所有平台并打包
-  help         显示此帮助信息
-  <platform>   编译指定平台 (如: linux-amd64)
+Commands:
+  all                 Build all supported platforms (backend only)
+  clean               Clean build directory
+  release             Build all platforms + create archives
+  package             Build + package current platform installer
+  package-all         Build + package all platform installers
+  help                Show this help
+  <platform>          Build specific platform (e.g. linux-amd64)
 
-支持的平台:
-  linux-amd64    Linux x86_64
-  linux-arm64    Linux ARM64
-  windows-amd64  Windows x86_64
-  darwin-amd64   macOS Intel
-  darwin-arm64   macOS Apple Silicon
+Supported platforms:
+  linux-amd64    linux-arm64
+  windows-amd64
+  darwin-amd64   darwin-arm64
 
-示例:
-  $0              # 编译当前平台
-  $0 all          # 编译所有平台
-  $0 linux-amd64  # 编译 Linux amd64
-  $0 clean        # 清理构建目录
-  $0 release      # 编译并打包
+Examples:
+  $0                        # Build current platform (backend only)
+  $0 all                    # Build all platforms (backend only)
+  $0 package                # Build + package current platform
+  $0 --arch arm64 package   # Build + package arm64
+  $0 linux-amd64            # Build linux amd64 backend
+  $0 clean                  # Clean build directory
+  $0 release                # Build all + create archives
 
-环境变量:
-  VERSION        设置版本号 (默认: git tag 或 1.0.0)
+Environment:
+  VERSION         Set version (default: git tag or 1.0.0)
+  --arch <arch>   Target architecture: amd64 (default) or arm64
 EOF
 }
 
 # 主函数
 main() {
     check_go
-    
+
+    ARCH="amd64"
+    ARGS=()
+    for arg in "$@"; do
+        case "$arg" in
+            --arch=*) ARCH="${arg#*=}" ;;
+            --arch) ;; # Handled below if followed by value
+            *) ARGS+=("$arg") ;;
+        esac
+    done
+    # Handle --arch <value> form (which doesn't have =)
+    local passthrough_args=()
+    local skip_next=0
+    for ((i=0; i<${#ARGS[@]}; i++)); do
+        if [ $skip_next -eq 1 ]; then skip_next=0; continue; fi
+        if [ "${ARGS[$i]}" = "--arch" ] && [ $i -lt $((${#ARGS[@]}-1)) ]; then
+            ARCH="${ARGS[$((i+1))]}"
+            skip_next=1
+        else
+            passthrough_args+=("${ARGS[$i]}")
+        fi
+    done
+    set -- "${passthrough_args[@]}"
+
     case "$1" in
         all)
             clean
@@ -212,6 +251,12 @@ main() {
             build_all
             create_release
             ;;
+        package)
+            package_current "$ARCH"
+            ;;
+        package-all)
+            package_all "$ARCH"
+            ;;
         help|--help|-h)
             show_help
             ;;
@@ -220,7 +265,6 @@ main() {
             build_current
             ;;
         *)
-            # 检查是否为有效平台
             local valid_platform=0
             for platform in "${PLATFORMS[@]}"; do
                 local os="${platform%%/*}"
@@ -232,9 +276,9 @@ main() {
                     break
                 fi
             done
-            
+
             if [ $valid_platform -eq 0 ]; then
-                error "无效的平台: $1"
+                error "Invalid platform: $1"
                 echo
                 show_help
                 exit 1
@@ -243,5 +287,4 @@ main() {
     esac
 }
 
-# 执行主函数
 main "$@"

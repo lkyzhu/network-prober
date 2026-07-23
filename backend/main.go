@@ -16,10 +16,29 @@ const Version = "1.0.0"
 
 var store *Store
 
+type Config struct {
+	Listen   string `json:"listen,omitempty"`
+	Store    string `json:"store,omitempty"`
+	LogLevel string `json:"log_level,omitempty"`
+}
+
+func loadConfig(path string) (*Config, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var cfg Config
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
 func main() {
 	listen := flag.String("listen", ":8080", "listen address (default :8080)")
 	logLevel := flag.String("log-level", "info", "log level: debug, info, warn, error")
 	storePath := flag.String("store", "data/store.json", "store file path")
+	confPath := flag.String("conf", "", "path to config.json (overrides individual flags)")
 	showVersion := flag.Bool("version", false, "show version and exit")
 	showVersionV := flag.Bool("v", false, "show version and exit (shorthand)")
 	flag.Parse()
@@ -27,6 +46,22 @@ func main() {
 	if *showVersion || *showVersionV {
 		fmt.Printf("network-prober version %s\n", Version)
 		os.Exit(0)
+	}
+
+	if *confPath != "" {
+		cfg, err := loadConfig(*confPath)
+		if err != nil {
+			log.Fatalf("failed to load config %s: %v", *confPath, err)
+		}
+		if cfg.Listen != "" {
+			*listen = cfg.Listen
+		}
+		if cfg.Store != "" {
+			*storePath = cfg.Store
+		}
+		if cfg.LogLevel != "" {
+			*logLevel = cfg.LogLevel
+		}
 	}
 
 	setLogLevel(*logLevel)
@@ -46,6 +81,8 @@ func main() {
 	http.HandleFunc("/api/items/import", handleImportItems)
 	http.HandleFunc("/api/items/move", handleMoveItem)
 	http.HandleFunc("/api/detect", handleDetect)
+	http.HandleFunc("/api/modules/export", handleExportModule)
+	http.HandleFunc("/api/modules/import", handleImportModule)
 	http.HandleFunc("/api/cert/upload", handleCertUpload)
 
 	log.Printf("network-prober v%s starting on %s", Version, *listen)
@@ -338,6 +375,55 @@ func handleDetect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResp(w, results)
+}
+
+func handleExportModule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonErr(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	idStr := r.URL.Query().Get("module_id")
+	if idStr == "" {
+		jsonErr(w, "module_id is required", http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		jsonErr(w, "invalid module_id", http.StatusBadRequest)
+		return
+	}
+	data := store.ExportModule(id)
+	if data == nil {
+		jsonErr(w, "module not found", http.StatusNotFound)
+		return
+	}
+	jsonResp(w, data)
+}
+
+func handleImportModule(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonErr(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req ImportModuleRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonErr(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Modules) == 0 {
+		jsonErr(w, "modules is required", http.StatusBadRequest)
+		return
+	}
+	var created []int
+	for _, mod := range req.Modules {
+		id, err := store.ImportModuleTree(mod, req.ParentID)
+		if err != nil {
+			jsonErr(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		created = append(created, id)
+	}
+	jsonResp(w, map[string]interface{}{"created": created})
 }
 
 func handleCertUpload(w http.ResponseWriter, r *http.Request) {

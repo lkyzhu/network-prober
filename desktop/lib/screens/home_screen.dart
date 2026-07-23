@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/app_state_provider.dart';
@@ -15,6 +16,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _lastError;
   String _statusText = '就绪';
+  Timer? _healthTimer;
 
   @override
   void initState() {
@@ -22,6 +24,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Future.microtask(() {
       ref.read(appStateProvider.notifier).initBackend();
     });
+    _healthTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      ref.read(appStateProvider.notifier).checkBackendHealth();
+    });
+  }
+
+  @override
+  void dispose() {
+    _healthTimer?.cancel();
+    super.dispose();
   }
 
   void _setStatus(String text) {
@@ -55,7 +66,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(width: 8),
             const Text('网络探测工具'),
             const SizedBox(width: 12),
-            _buildBackendStatus(appState.backendReady),
+            _buildBackendStatus(appState.backendReady, appState.backendReachable),
           ],
         ),
         actions: [
@@ -88,7 +99,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               icon: Icons.refresh,
               label: '重启',
               onPressed: () {
-                ref.read(appStateProvider.notifier).restartBackend();
+                ref.read(appStateProvider.notifier).restartSystemdService();
               },
             ),
           _ActionButton(
@@ -117,7 +128,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               ],
             ),
           ),
-          // Footer status bar (matching web #tail)
+          // Footer status bar
           Container(
             height: 32,
             padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -150,15 +161,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildBackendStatus(bool ready) {
+  Widget _buildBackendStatus(bool ready, bool reachable) {
     final appState = ref.watch(appStateProvider);
-    final label = ready
-        ? (appState.backendAddress.isNotEmpty ? appState.backendAddress : 'Backend OK')
-        : 'Starting...';
+    final Color bgColor;
+    final Color dotColor;
+    final String label;
+
+    if (ready) {
+      bgColor = Colors.green.withValues(alpha: 0.15);
+      dotColor = Colors.green;
+      label = appState.backendAddress.isNotEmpty ? appState.backendAddress : 'Backend OK';
+    } else if (reachable) {
+      bgColor = Colors.orange.withValues(alpha: 0.15);
+      dotColor = Colors.orange;
+      label = 'Unreachable';
+    } else {
+      bgColor = Colors.red.withValues(alpha: 0.15);
+      dotColor = Colors.red;
+      label = 'Starting...';
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(
-        color: ready ? Colors.green.withValues(alpha: 0.15) : Colors.red.withValues(alpha: 0.15),
+        color: bgColor,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Row(
@@ -168,7 +194,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             width: 8,
             height: 8,
             decoration: BoxDecoration(
-              color: ready ? Colors.green : Colors.red,
+              color: dotColor,
               shape: BoxShape.circle,
             ),
           ),
@@ -177,7 +203,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             label,
             style: TextStyle(
               fontSize: 11,
-              color: ready ? Colors.green : Colors.red,
+              color: dotColor,
               fontFamily: 'monospace',
             ),
           ),

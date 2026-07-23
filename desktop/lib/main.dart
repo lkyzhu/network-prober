@@ -12,7 +12,7 @@ class ProberApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp(
-      title: 'NetworkTools',
+      title: 'Prober UI',
       theme: ThemeData(
         colorSchemeSeed: Colors.blue,
         useMaterial3: true,

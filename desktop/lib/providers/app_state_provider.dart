@@ -15,8 +15,8 @@ class AppState extends ChangeNotifier {
   final ApiService _api = ApiService();
   final BackendService _backend = BackendService();
 
-  String _backendPort = '';
-  String get backendPort => _backendPort;
+  int _backendPort = 18081;
+  String get backendPort => _backendPort.toString();
   String _backendAddress = '';
   String get backendAddress => _backendAddress;
 
@@ -45,36 +45,86 @@ class AppState extends ChangeNotifier {
   bool _backendReady = false;
   bool get backendReady => _backendReady;
 
+  bool _backendReachable = false;
+  bool get backendReachable => _backendReachable;
+
   String? _error;
   String? get error => _error;
 
-  Future<void> initBackend({String? listenAddr}) async {
+  AppState() {
+    final config = BackendService.loadConfig();
+    _backendPort = config.port;
+    _storePath = config.store;
+    _backendAddress = 'localhost:${config.port}';
+  }
+
+  Future<void> initBackend() async {
     _loading = true;
     _error = null;
     notifyListeners();
     try {
-      await _backend.start(
-        listenAddr: listenAddr ?? (_backendPort.isNotEmpty ? _backendPort : null),
-        storePath: _storePath.isNotEmpty ? _storePath : null,
-      );
+      await _backend.start();
       _backendAddress = _backend.listenAddress;
       _api.updateBaseUrl(_backend.baseUrl);
       _backendReady = true;
+      _backendReachable = true;
       await loadData();
     } catch (e) {
       _error = '启动后端失败: $e';
       _backendReady = false;
+      _backendReachable = false;
     }
     _loading = false;
     notifyListeners();
   }
 
-  Future<void> restartBackend() async {
-    _backend.stop();
+  Future<void> checkBackendHealth() async {
+    if (!_backendReachable && !_backendReady) return;
+    final ok = await _backend.isRunningOnPort(_backendPort);
+    if (ok && !_backendReady) {
+      _backendReady = true;
+      _api.updateBaseUrl('http://localhost:$_backendPort');
+      await loadData();
+      notifyListeners();
+    } else if (!ok && _backendReady) {
+      _backendReady = false;
+      _backendReachable = true;
+      notifyListeners();
+    }
+  }
+
+  Future<void> restartSystemdService() async {
+    _loading = true;
     _backendReady = false;
+    _backendReachable = false;
+    _error = null;
     notifyListeners();
-    await Future.delayed(const Duration(seconds: 1));
-    await initBackend();
+    try {
+      final ok = await _backend.restartSystemdService();
+      if (ok) {
+        for (int i = 0; i < 30; i++) {
+          if (await _backend.isRunningOnPort(_backendPort)) {
+            _backendAddress = 'localhost:$_backendPort';
+            _api.updateBaseUrl(_backend.baseUrl);
+            _backendReady = true;
+            _backendReachable = true;
+            await loadData();
+            _loading = false;
+            notifyListeners();
+            return;
+          }
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+        _error = '后端重启后未能在15s内响应';
+      } else {
+        _error = '重启失败：pkexec被取消或无权限';
+      }
+    } catch (e) {
+      _error = '重启失败: $e';
+    }
+    _loading = false;
+    if (!_backendReady) _backendReachable = _backendReachable;
+    notifyListeners();
   }
 
   Future<void> loadData() async {
@@ -96,27 +146,28 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> saveConfig() async {
-    _backend.stop();
-    _backendReady = false;
-    notifyListeners();
-    await Future.delayed(const Duration(seconds: 1));
-    await initBackend();
+  Future<bool> saveConfig() async {
+    final config = BackendConfig(
+      listen: '$_backendPort',
+      store: _storePath,
+    );
+    return await BackendService.saveConfig(config);
   }
 
-  Future<void> updateBackendPort(String port) async {
-    _backendPort = port.trim();
-    await saveConfig();
+  Future<void> updateBackendPort(String portStr) async {
+    final port = int.tryParse(portStr.trim());
+    if (port != null && port > 0 && port < 65536) {
+      _backendPort = port;
+    } else {
+      _backendPort = 18081;
+    }
+    _backendAddress = 'localhost:$_backendPort';
+    notifyListeners();
   }
 
   void setStorePath(String path) {
     _storePath = path;
     notifyListeners();
-  }
-
-  Future<void> updateStorePath(String path) async {
-    _storePath = path;
-    await saveConfig();
   }
 
   Future<void> addModule(String name, {int parentId = 0}) async {
@@ -227,6 +278,26 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<Map<String, dynamic>> exportModule(int id) async {
+    try {
+      return await _api.exportModule(id);
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  Future<void> importModule(Map<String, dynamic> data) async {
+    try {
+      await _api.importModule(data);
+      await loadData();
+    } catch (e) {
+      _error = e.toString();
+      notifyListeners();
+    }
+  }
+
   Future<ProbeItem> getItem(int id) async {
     return await _api.getItem(id);
   }
@@ -248,7 +319,7 @@ class AppState extends ChangeNotifier {
     return 0;
   }
 
-  // -- Item selection (matching web UI) --
+  // -- Item selection --
   final Set<int> _selectedItemIds = {};
   Set<int> get selectedItemIds => Set.unmodifiable(_selectedItemIds);
 

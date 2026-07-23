@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../providers/app_state_provider.dart';
 import 'module_tree_node.dart';
 
@@ -109,8 +112,41 @@ class ModuleTreeWidget extends ConsumerWidget {
           child: const Text('添加根模块'),
           onTap: () => _showAddRootModuleDialog(context, ref),
         ),
+        PopupMenuItem<void>(
+          child: const Text('导入'),
+          onTap: () => _importRootModule(context, ref),
+        ),
       ],
     );
+  }
+
+  Future<void> _importRootModule(BuildContext context, WidgetRef ref) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        dialogTitle: '导入模块',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (result == null || result.files.isEmpty) return;
+      final file = File(result.files.single.path!);
+      final jsonStr = file.readAsStringSync();
+      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
+      await ref.read(appStateProvider.notifier).importModule({
+        'parent_id': 0,
+        'modules': [data],
+      });
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('导入成功'), duration: Duration(seconds: 2)),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('导入失败: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 
   void _showAddRootModuleDialog(BuildContext context, WidgetRef ref) {
@@ -138,10 +174,10 @@ class ModuleTreeWidget extends ConsumerWidget {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               if (nameCtl.text.trim().isNotEmpty) {
-                ref.read(appStateProvider.notifier).addModule(nameCtl.text.trim());
-                Navigator.pop(ctx);
+                await ref.read(appStateProvider.notifier).addModule(nameCtl.text.trim());
+                if (ctx.mounted) Navigator.pop(ctx);
               }
             },
             child: const Text('确认'),

@@ -25,13 +25,17 @@ class _ItemRowWidgetState extends ConsumerState<ItemRowWidget> {
     final isSelected = appState.isItemSelected(widget.item.id);
 
     Color statusColor;
+    String statusLabel = '未探测';
     if (probeResult == null) {
       statusColor = Colors.grey;
     } else if (probeResult.successCount == probeResult.totalTargets && probeResult.totalTargets > 0) {
+      statusLabel = '全部成功';
       statusColor = Colors.green;
     } else if (probeResult.successCount > 0) {
+      statusLabel = '部分成功';
       statusColor = Colors.orange;
     } else {
+      statusLabel = '全部失败';
       statusColor = Colors.red;
     }
 
@@ -91,25 +95,23 @@ class _ItemRowWidgetState extends ConsumerState<ItemRowWidget> {
                   // Result
                   Expanded(
                     flex: 2,
-                    child: GestureDetector(
-                      onTap: probeResult != null
-                          ? () => setState(() => _detailExpanded = !_detailExpanded)
-                          : null,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(width: 8, height: 8, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
-                          const SizedBox(width: 4),
-                          if (probeResult != null)
-                            Text('${probeResult.successCount}/${probeResult.totalTargets}', style: TextStyle(fontSize: 12, color: statusColor, fontWeight: FontWeight.w500))
-                          else
-                            Text('未探测', style: TextStyle(fontSize: 12, color: Colors.grey[400])),
-                          if (probeResult != null) ...[
-                            const SizedBox(width: 4),
-                            Icon(_detailExpanded ? Icons.expand_less : Icons.expand_more, size: 14, color: Colors.grey),
-                          ],
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(width: 8, height: 8, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+                        const SizedBox(width: 4),
+                        Text(statusLabel, style: TextStyle(fontSize: 12, color: statusColor, fontWeight: FontWeight.w500)),
+                        if (probeResult != null) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => setState(() => _detailExpanded = !_detailExpanded),
+                            child: Text(
+                              _detailExpanded ? '收起' : '详情',
+                              style: TextStyle(fontSize: 11, color: Colors.blue[600]),
+                            ),
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ],
@@ -117,9 +119,12 @@ class _ItemRowWidgetState extends ConsumerState<ItemRowWidget> {
             ),
           ),
         ),
-        // Inline result summary (matching web .inline-result)
+        // Summary row (always visible, matching web .inline-result)
+        if (probeResult != null)
+          _buildSummaryRow(probeResult),
+        // Per-IP detail rows (toggled by "详情", matching web .inline-detail)
         if (probeResult != null && _detailExpanded)
-          _buildInlineResult(context, probeResult, appState),
+          _buildDetailRows(probeResult),
       ],
     );
   }
@@ -145,11 +150,11 @@ class _ItemRowWidgetState extends ConsumerState<ItemRowWidget> {
     );
   }
 
-  Widget _buildInlineResult(BuildContext context, ProbeResult result, dynamic appState) {
+  Widget _buildSummaryRow(ProbeResult result) {
     final okCount = result.results.where((r) => r.success).length;
     final failCount = result.results.where((r) => !r.success).length;
     final total = result.results.length;
-
+    
     String statusLabel;
     Color statusColor;
     if (okCount == total && total > 0) {
@@ -173,6 +178,9 @@ class _ItemRowWidgetState extends ConsumerState<ItemRowWidget> {
     final avgRtt = result.results.isEmpty
         ? 0.0
         : result.results.map((r) => (r.rttMs ?? 0).toDouble()).reduce((a, b) => a + b) / result.results.length;
+    final avgTotal = result.results.isEmpty
+        ? 0.0
+        : result.results.map((r) => (r.totalMs ?? 0).toDouble()).reduce((a, b) => a + b) / result.results.length;
 
     final firstWithCert = result.results.cast<SingleProbeResult?>().firstWhere(
       (r) => r!.cert != null,
@@ -199,6 +207,8 @@ class _ItemRowWidgetState extends ConsumerState<ItemRowWidget> {
               _metric('连接', '${avgConn.toStringAsFixed(1)}ms'),
               const SizedBox(width: 8),
               _metric('首包', '${avgRtt.toStringAsFixed(1)}ms'),
+              const SizedBox(width: 8),
+              _metric('总耗时', '${avgTotal.toStringAsFixed(1)}ms'),
               if (firstWithCert != null) ...[
                 const SizedBox(width: 8),
                 _metric('证书', firstWithCert.cert!.verified ? '已验证' : '未验证',
@@ -206,51 +216,65 @@ class _ItemRowWidgetState extends ConsumerState<ItemRowWidget> {
               ],
             ],
           ),
-          const SizedBox(height: 6),
-          // Detail rows (matching web .inline-detail)
-          ...result.results.map((r) => Padding(
-            padding: const EdgeInsets.only(bottom: 2),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 130,
-                  child: Text(r.target, style: const TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600)),
-                ),
-                Icon(
-                  r.success ? Icons.check_circle : Icons.error,
-                  size: 12, color: r.success ? Colors.green : Colors.red,
-                ),
-                const SizedBox(width: 8),
-                if (r.dnsLookupMs != null)
-                  _metric('DNS', '${r.dnsLookupMs}ms'),
-                if (r.dnsLookupMs != null) const SizedBox(width: 8),
-                if (r.connectMs != null)
-                  _metric('连接', '${r.connectMs}ms'),
-                if (r.connectMs != null) const SizedBox(width: 8),
-                if (r.rttMs != null)
-                  _metric('耗时', '${r.rttMs}ms'),
-                if (r.statusCode != null) ...[
-                  const SizedBox(width: 8),
-                  _metric('状态码', '${r.statusCode}'),
-                ],
-                if (r.error != null) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(r.error!, style: const TextStyle(fontSize: 11, color: Colors.red), overflow: TextOverflow.ellipsis),
-                  ),
-                ],
-                if (r.cert != null)
-                  IconButton(
-                    icon: const Icon(Icons.verified, size: 14, color: Colors.blue),
-                    tooltip: '证书信息',
-                    onPressed: () => _showCertInfo(context, r.cert!),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-              ],
-            ),
-          )),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDetailRows(ProbeResult result) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(62, 4, 12, 6),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: result.results.map((r) => Padding(
+          padding: const EdgeInsets.only(bottom: 2),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 130,
+                child: Text(r.target, style: const TextStyle(fontSize: 11, fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+              ),
+              Icon(
+                r.success ? Icons.check_circle : Icons.error,
+                size: 12, color: r.success ? Colors.green : Colors.red,
+              ),
+              const SizedBox(width: 8),
+              if (r.dnsLookupMs != null)
+                _metric('DNS', '${r.dnsLookupMs}ms'),
+              if (r.dnsLookupMs != null) const SizedBox(width: 8),
+              if (r.connectMs != null)
+                _metric('连接', '${r.connectMs}ms'),
+              if (r.connectMs != null) const SizedBox(width: 8),
+              if (r.rttMs != null)
+                _metric('首包', '${r.rttMs}ms'),
+              if (r.rttMs != null) const SizedBox(width: 8),
+              if (r.totalMs != null)
+                _metric('总耗时', '${r.totalMs}ms'),
+              if (r.statusCode != null) ...[
+                const SizedBox(width: 8),
+                _metric('状态码', '${r.statusCode}'),
+              ],
+              if (r.error != null) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(r.error!, style: const TextStyle(fontSize: 11, color: Colors.red), overflow: TextOverflow.ellipsis),
+                ),
+              ],
+              if (r.cert != null)
+                IconButton(
+                  icon: const Icon(Icons.verified, size: 14, color: Colors.blue),
+                  tooltip: '证书信息',
+                  onPressed: () => _showCertInfo(context, r.cert!),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+            ],
+          ),
+        )).toList(),
       ),
     );
   }
